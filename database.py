@@ -29,23 +29,34 @@ class Database:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id BIGSERIAL PRIMARY KEY,
+
                     telegram_id BIGINT UNIQUE NOT NULL,
+
                     username TEXT,
+
                     name TEXT,
+
                     age INTEGER CHECK (
                         age IS NULL OR age >= 13
                     ),
+
                     gender TEXT CHECK (
                         gender IN ('male', 'female')
                     ),
+
                     photo_file_id TEXT,
+
                     facts TEXT,
+
                     profile_created BOOLEAN
                         NOT NULL DEFAULT FALSE,
+
                     is_active BOOLEAN
                         NOT NULL DEFAULT TRUE,
+
                     created_at TIMESTAMPTZ
                         NOT NULL DEFAULT NOW(),
+
                     updated_at TIMESTAMPTZ
                         NOT NULL DEFAULT NOW()
                 )
@@ -71,6 +82,7 @@ class Database:
                         ),
 
                     table_type TEXT,
+
                     advice TEXT,
 
                     created_at TIMESTAMPTZ
@@ -89,8 +101,11 @@ class Database:
                     admin_id BIGINT NOT NULL,
 
                     message_type TEXT NOT NULL,
+
                     message_text TEXT,
+
                     button_text TEXT,
+
                     button_url TEXT,
 
                     status TEXT
@@ -126,6 +141,10 @@ class Database:
                 idx_users_active
                 ON users(is_active, profile_created)
             """)
+
+    # ========================================================
+    # USERS
+    # ========================================================
 
     async def upsert_user(
         self,
@@ -231,9 +250,7 @@ class Database:
         }
 
         if field not in allowed:
-            raise ValueError(
-                "Invalid field"
-            )
+            raise ValueError("Invalid field")
 
         async with self.pool.acquire() as conn:
 
@@ -249,6 +266,22 @@ class Database:
                 value
             )
 
+    async def delete_profile(
+        self,
+        telegram_id
+    ):
+
+        async with self.pool.acquire() as conn:
+
+            await conn.execute("""
+                DELETE FROM users
+                WHERE telegram_id = $1
+            """, telegram_id)
+
+    # ========================================================
+    # RANDOM PROFILE
+    # ========================================================
+
     async def random_profile(
         self,
         current_id
@@ -262,15 +295,13 @@ class Database:
                 WHERE u.profile_created = TRUE
                   AND u.is_active = TRUE
                   AND u.telegram_id <> $1
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM ratings r
-                      WHERE r.rater_id = $1
-                        AND r.rated_id = u.telegram_id
-                  )
                 ORDER BY RANDOM()
                 LIMIT 1
             """, current_id)
+
+    # ========================================================
+    # RATINGS
+    # ========================================================
 
     async def rating_exists(
         self,
@@ -292,6 +323,24 @@ class Database:
                 rated_id
             )
 
+    async def get_rating(
+        self,
+        rater_id,
+        rated_id
+    ):
+
+        async with self.pool.acquire() as conn:
+
+            return await conn.fetchrow("""
+                SELECT *
+                FROM ratings
+                WHERE rater_id = $1
+                  AND rated_id = $2
+            """,
+                rater_id,
+                rated_id
+            )
+
     async def add_rating(
         self,
         rater_id,
@@ -307,11 +356,36 @@ class Database:
                     rated_id,
                     score
                 )
+
                 VALUES ($1, $2, $3)
+
                 RETURNING id
             """,
                 rater_id,
                 rated_id,
+                score
+            )
+
+    async def update_rating(
+        self,
+        rating_id,
+        score
+    ):
+
+        async with self.pool.acquire() as conn:
+
+            return await conn.fetchrow("""
+                UPDATE ratings
+                SET
+                    score = $2,
+                    table_type = NULL,
+                    advice = NULL,
+                    created_at = NOW()
+                WHERE id = $1
+
+                RETURNING id
+            """,
+                rating_id,
                 score
             )
 
@@ -365,6 +439,10 @@ class Database:
                 telegram_id
             )
 
+    # ========================================================
+    # MAILING
+    # ========================================================
+
     async def get_active_users(self):
 
         async with self.pool.acquire() as conn:
@@ -411,6 +489,7 @@ class Database:
                     button_url,
                     total
                 )
+
                 VALUES (
                     $1,
                     $2,
@@ -419,6 +498,7 @@ class Database:
                     $5,
                     $6
                 )
+
                 RETURNING id
             """,
                 admin_id,
