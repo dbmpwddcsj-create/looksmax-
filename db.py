@@ -86,9 +86,17 @@ class Database:
             "users",
             params={
                 "telegram_id": f"eq.{telegram_id}",
-                "select": "*",
             },
             json=data,
+        )
+
+    async def get_all_users(self):
+        return await self.request(
+            "GET",
+            "users",
+            params={
+                "select": "telegram_id",
+            },
         )
 
     # =========================================================
@@ -115,6 +123,7 @@ class Database:
         facts: str | None = None,
         height: float | None = None,
         weight: float | None = None,
+        look_type: str | None = None,
     ):
         result = await self.request(
             "POST",
@@ -126,6 +135,7 @@ class Database:
                 "facts": facts,
                 "height": height,
                 "weight": weight,
+                "look_type": look_type,
                 "status": "active",
             },
         )
@@ -161,58 +171,52 @@ class Database:
             },
         )
 
-    # =========================================================
-    # PROFILE FOR RATING
-    # =========================================================
-
-    async def get_public_profile(
+    async def restore_profile(
         self,
         telegram_id: int,
     ):
-        result = await self.request(
-            "GET",
-            "public_profiles",
+        return await self.request(
+            "PATCH",
+            "profiles",
             params={
                 "user_id": f"eq.{telegram_id}",
-                "select": "*",
-                "limit": "1",
+            },
+            json={
+                "status": "active",
             },
         )
 
-        return result[0] if result else None
+    # =========================================================
+    # RATING PROFILES
+    # =========================================================
 
     async def get_random_unrated_profile(
         self,
         rater_id: int,
     ):
-        """
-        Берём активные анкеты из public_profiles.
-        Проверяем уже отдельно, оценивал ли их текущий пользователь.
-        """
-
-        result = await self.request(
+        profiles = await self.request(
             "GET",
-            "public_profiles",
+            "profiles",
             params={
                 "user_id": f"neq.{rater_id}",
+                "status": "eq.active",
                 "select": "*",
                 "limit": "100",
             },
         )
 
-        if not result:
+        if not profiles:
             return None
 
-        for profile in result:
-            if profile.get("user_id") == rater_id:
-                continue
+        for profile in profiles:
+            profile_user_id = profile["user_id"]
 
-            rating = await self.get_rating(
+            existing = await self.get_rating(
                 rater_id,
-                profile["user_id"],
+                profile_user_id,
             )
 
-            if rating is None:
+            if existing is None:
                 return profile
 
         return None
@@ -226,7 +230,7 @@ class Database:
             "ratings",
             params={
                 "rater_id": f"eq.{rater_id}",
-                "select": "profile_user_id,score",
+                "select": "profile_user_id,score,look_type",
                 "order": "id.desc",
                 "limit": "100",
             },
@@ -236,11 +240,11 @@ class Database:
             return None
 
         for rating in ratings:
-            profile = await self.get_public_profile(
+            profile = await self.get_profile(
                 rating["profile_user_id"]
             )
 
-            if profile:
+            if profile and profile.get("status") == "active":
                 return profile
 
         return None
@@ -272,6 +276,7 @@ class Database:
         rater_id: int,
         profile_user_id: int,
         score: float,
+        look_type: str | None = None,
     ):
         existing = await self.get_rating(
             rater_id,
@@ -279,6 +284,13 @@ class Database:
         )
 
         if existing:
+            data = {
+                "score": score,
+            }
+
+            if look_type is not None:
+                data["look_type"] = look_type
+
             return await self.request(
                 "PATCH",
                 "ratings",
@@ -286,9 +298,7 @@ class Database:
                     "rater_id": f"eq.{rater_id}",
                     "profile_user_id": f"eq.{profile_user_id}",
                 },
-                json={
-                    "score": score,
-                },
+                json=data,
             )
 
         return await self.request(
@@ -299,6 +309,7 @@ class Database:
                 "rater_id": rater_id,
                 "profile_user_id": profile_user_id,
                 "score": score,
+                "look_type": look_type,
             },
         )
 
@@ -404,18 +415,22 @@ class Database:
             },
         )
 
+    async def get_report(self, report_id: int):
+        result = await self.request(
+            "GET",
+            "reports",
+            params={
+                "id": f"eq.{report_id}",
+                "select": "*",
+                "limit": "1",
+            },
+        )
+
+        return result[0] if result else None
+
     # =========================================================
     # BROADCAST
     # =========================================================
-
-    async def get_all_users(self):
-        return await self.request(
-            "GET",
-            "users",
-            params={
-                "select": "telegram_id",
-            },
-        )
 
     async def create_broadcast(
         self,
