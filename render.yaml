@@ -1,25 +1,15 @@
 services:
-  - type: web
-    name: rating-bot
+  - type: worker
+    name: telegram-rating-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
-
     envVars:
       - key: BOT_TOKEN
         sync: false
-
-      - key: ADMIN_ID
+      - key: ADMIN_IDS
         sync: false
-
-      - key: DATABASE_URL
+      - key: SUPABASE_URL
         sync: false
-
-      - key: RENDER_EXTERNAL_URL
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-
-      - key: WEBHOOK_SECRET
-        sync: false
-
-      - key: PORT
-        value: "10000"
