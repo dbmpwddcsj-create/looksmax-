@@ -1,5 +1,4 @@
 import os
-import json
 import httpx
 
 
@@ -43,9 +42,9 @@ class Database:
 
         return response.json()
 
-    # =========================
+    # ========================================================
     # USERS
-    # =========================
+    # ========================================================
 
     async def get_user(self, telegram_id: int):
         result = await self.request(
@@ -68,7 +67,9 @@ class Database:
         result = await self.request(
             "POST",
             "users",
-            params={"select": "*"},
+            params={
+                "select": "*",
+            },
             json={
                 "telegram_id": telegram_id,
                 "username": username,
@@ -92,9 +93,9 @@ class Database:
             json=data,
         )
 
-    # =========================
+    # ========================================================
     # PROFILES
-    # =========================
+    # ========================================================
 
     async def get_profile(self, telegram_id: int):
         result = await self.request(
@@ -120,7 +121,9 @@ class Database:
         result = await self.request(
             "POST",
             "profiles",
-            params={"select": "*"},
+            params={
+                "select": "*",
+            },
             json={
                 "user_id": telegram_id,
                 "photo_id": photo_id,
@@ -148,7 +151,10 @@ class Database:
             json=data,
         )
 
-    async def delete_profile(self, telegram_id: int):
+    async def delete_profile(
+        self,
+        telegram_id: int,
+    ):
         return await self.request(
             "PATCH",
             "profiles",
@@ -161,92 +167,9 @@ class Database:
             },
         )
 
-    # =========================
-    # MULTIPLE PHOTOS
-    # =========================
-
-    @staticmethod
-    def parse_photo_ids(photo_id):
-        if not photo_id:
-            return []
-
-        if isinstance(photo_id, list):
-            return [
-                str(x)
-                for x in photo_id
-                if x
-            ]
-
-        if not isinstance(photo_id, str):
-            return [str(photo_id)]
-
-        value = photo_id.strip()
-
-        if not value:
-            return []
-
-        if value.startswith("["):
-            try:
-                parsed = json.loads(value)
-
-                if isinstance(parsed, list):
-                    return [
-                        str(x)
-                        for x in parsed
-                        if x
-                    ]
-            except json.JSONDecodeError:
-                pass
-
-        return [value]
-
-    async def get_profile_photos(
-        self,
-        telegram_id: int,
-    ):
-        profile = await self.get_profile(
-            telegram_id
-        )
-
-        if not profile:
-            return []
-
-        return self.parse_photo_ids(
-            profile.get("photo_id")
-        )
-
-    async def set_profile_photos(
-        self,
-        telegram_id: int,
-        photo_ids: list[str],
-    ):
-        photo_ids = [
-            str(x)
-            for x in photo_ids
-            if x
-        ]
-
-        if not photo_ids:
-            return None
-
-        if len(photo_ids) == 1:
-            value = photo_ids[0]
-        else:
-            value = json.dumps(
-                photo_ids,
-                ensure_ascii=False,
-            )
-
-        return await self.update_profile(
-            telegram_id,
-            {
-                "photo_id": value,
-            },
-        )
-
-    # =========================
+    # ========================================================
     # RATINGS
-    # =========================
+    # ========================================================
 
     async def get_rating(
         self,
@@ -271,43 +194,6 @@ class Database:
         rater_id: int,
         profile_user_id: int,
         score: float,
-    ):
-        existing = await self.get_rating(
-            rater_id,
-            profile_user_id,
-        )
-
-        if existing:
-            return await self.request(
-                "PATCH",
-                "ratings",
-                params={
-                    "rater_id": f"eq.{rater_id}",
-                    "profile_user_id": f"eq.{profile_user_id}",
-                    "select": "*",
-                },
-                json={
-                    "score": score,
-                    "updated_at": "now()",
-                },
-            )
-
-        return await self.request(
-            "POST",
-            "ratings",
-            params={"select": "*"},
-            json={
-                "rater_id": rater_id,
-                "profile_user_id": profile_user_id,
-                "score": score,
-            },
-        )
-
-    async def save_rating(
-        self,
-        rater_id: int,
-        profile_user_id: int,
-        score: float,
         look_type: str | None = None,
     ):
         existing = await self.get_rating(
@@ -316,15 +202,13 @@ class Database:
         )
 
         data = {
-            "score": float(score),
+            "score": score,
         }
 
         if look_type is not None:
             data["look_type"] = look_type
 
         if existing:
-            data["updated_at"] = "now()"
-
             return await self.request(
                 "PATCH",
                 "ratings",
@@ -336,18 +220,32 @@ class Database:
                 json=data,
             )
 
-        data.update(
-            {
-                "rater_id": rater_id,
-                "profile_user_id": profile_user_id,
-            }
-        )
+        data.update({
+            "rater_id": rater_id,
+            "profile_user_id": profile_user_id,
+        })
 
         return await self.request(
             "POST",
             "ratings",
-            params={"select": "*"},
+            params={
+                "select": "*",
+            },
             json=data,
+        )
+
+    async def save_rating(
+        self,
+        rater_id: int,
+        profile_user_id: int,
+        score: float,
+        look_type: str | None = None,
+    ):
+        return await self.create_rating(
+            rater_id=rater_id,
+            profile_user_id=profile_user_id,
+            score=score,
+            look_type=look_type,
         )
 
     async def get_average_rating(
@@ -403,9 +301,9 @@ class Database:
             telegram_id
         )
 
-    # =========================
+    # ========================================================
     # FIND PROFILE
-    # =========================
+    # ========================================================
 
     async def next_unrated_profile(
         self,
@@ -423,6 +321,9 @@ class Database:
         )
 
         for profile in result or []:
+            if profile.get("status") != "active":
+                continue
+
             rating = await self.get_rating(
                 telegram_id,
                 profile["user_id"],
@@ -442,7 +343,7 @@ class Database:
             "ratings",
             params={
                 "rater_id": f"eq.{telegram_id}",
-                "select": "profile_user_id,score",
+                "select": "profile_user_id,score,updated_at",
                 "order": "updated_at.desc",
             },
         )
@@ -462,9 +363,13 @@ class Database:
             )
 
             if profile:
-                return profile[0]
+                if profile[0].get("status") == "active":
+                    return profile[0]
 
         return None
+
+    # Совместимые названия, чтобы старый код
+    # тоже не ломался.
 
     async def get_random_unrated_profile(
         self,
@@ -482,9 +387,9 @@ class Database:
             telegram_id
         )
 
-    # =========================
+    # ========================================================
     # ADVICE
-    # =========================
+    # ========================================================
 
     async def create_advice(
         self,
@@ -496,7 +401,9 @@ class Database:
         return await self.request(
             "POST",
             "advice",
-            params={"select": "*"},
+            params={
+                "select": "*",
+            },
             json={
                 "from_user_id": from_user_id,
                 "to_user_id": to_user_id,
@@ -505,9 +412,9 @@ class Database:
             },
         )
 
-    # =========================
+    # ========================================================
     # REPORTS
-    # =========================
+    # ========================================================
 
     async def create_report(
         self,
@@ -519,7 +426,9 @@ class Database:
         return await self.request(
             "POST",
             "reports",
-            params={"select": "*"},
+            params={
+                "select": "*",
+            },
             json={
                 "reporter_id": reporter_id,
                 "profile_user_id": profile_user_id,
@@ -573,9 +482,9 @@ class Database:
             },
         )
 
-    # =========================
+    # ========================================================
     # BROADCASTS
-    # =========================
+    # ========================================================
 
     async def create_broadcast(
         self,
@@ -587,7 +496,9 @@ class Database:
         return await self.request(
             "POST",
             "broadcasts",
-            params={"select": "*"},
+            params={
+                "select": "*",
+            },
             json={
                 "admin_id": admin_id,
                 "message": message,
@@ -607,9 +518,9 @@ class Database:
             },
         )
 
-    # =========================
+    # ========================================================
     # ALL USERS
-    # =========================
+    # ========================================================
 
     async def get_all_users(self):
         return await self.request(
