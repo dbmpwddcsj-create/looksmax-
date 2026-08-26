@@ -42,9 +42,9 @@ class Database:
 
         return response.json()
 
-    # =========================
+    # =========================================================
     # USERS
-    # =========================
+    # =========================================================
 
     async def get_user(self, telegram_id: int):
         result = await self.request(
@@ -91,9 +91,9 @@ class Database:
             json=data,
         )
 
-    # =========================
+    # =========================================================
     # PROFILES
-    # =========================
+    # =========================================================
 
     async def get_profile(self, telegram_id: int):
         result = await self.request(
@@ -142,12 +142,14 @@ class Database:
             "profiles",
             params={
                 "user_id": f"eq.{telegram_id}",
-                "select": "*",
             },
             json=data,
         )
 
-    async def delete_profile(self, telegram_id: int):
+    async def delete_profile(
+        self,
+        telegram_id: int,
+    ):
         return await self.request(
             "PATCH",
             "profiles",
@@ -156,13 +158,96 @@ class Database:
             },
             json={
                 "status": "deleted",
-                "deleted_at": "now()",
             },
         )
 
-    # =========================
+    # =========================================================
+    # PROFILE FOR RATING
+    # =========================================================
+
+    async def get_public_profile(
+        self,
+        telegram_id: int,
+    ):
+        result = await self.request(
+            "GET",
+            "public_profiles",
+            params={
+                "user_id": f"eq.{telegram_id}",
+                "select": "*",
+                "limit": "1",
+            },
+        )
+
+        return result[0] if result else None
+
+    async def get_random_unrated_profile(
+        self,
+        rater_id: int,
+    ):
+        """
+        Берём активные анкеты из public_profiles.
+        Проверяем уже отдельно, оценивал ли их текущий пользователь.
+        """
+
+        result = await self.request(
+            "GET",
+            "public_profiles",
+            params={
+                "user_id": f"neq.{rater_id}",
+                "select": "*",
+                "limit": "100",
+            },
+        )
+
+        if not result:
+            return None
+
+        for profile in result:
+            if profile.get("user_id") == rater_id:
+                continue
+
+            rating = await self.get_rating(
+                rater_id,
+                profile["user_id"],
+            )
+
+            if rating is None:
+                return profile
+
+        return None
+
+    async def get_random_rated_profile(
+        self,
+        rater_id: int,
+    ):
+        ratings = await self.request(
+            "GET",
+            "ratings",
+            params={
+                "rater_id": f"eq.{rater_id}",
+                "select": "profile_user_id,score",
+                "order": "id.desc",
+                "limit": "100",
+            },
+        )
+
+        if not ratings:
+            return None
+
+        for rating in ratings:
+            profile = await self.get_public_profile(
+                rating["profile_user_id"]
+            )
+
+            if profile:
+                return profile
+
+        return None
+
+    # =========================================================
     # RATINGS
-    # =========================
+    # =========================================================
 
     async def get_rating(
         self,
@@ -182,7 +267,7 @@ class Database:
 
         return result[0] if result else None
 
-    async def create_rating(
+    async def save_rating(
         self,
         rater_id: int,
         profile_user_id: int,
@@ -200,11 +285,9 @@ class Database:
                 params={
                     "rater_id": f"eq.{rater_id}",
                     "profile_user_id": f"eq.{profile_user_id}",
-                    "select": "*",
                 },
                 json={
                     "score": score,
-                    "updated_at": "now()",
                 },
             )
 
@@ -221,13 +304,13 @@ class Database:
 
     async def get_average_rating(
         self,
-        telegram_id: int,
+        profile_user_id: int,
     ):
         result = await self.request(
             "GET",
             "ratings",
             params={
-                "profile_user_id": f"eq.{telegram_id}",
+                "profile_user_id": f"eq.{profile_user_id}",
                 "select": "score",
             },
         )
@@ -235,98 +318,40 @@ class Database:
         if not result:
             return 0.0
 
-        scores = [
-            float(row["score"])
-            for row in result
-            if row.get("score") is not None
-        ]
+        scores = []
+
+        for row in result:
+            try:
+                scores.append(float(row["score"]))
+            except (TypeError, ValueError):
+                pass
 
         if not scores:
             return 0.0
 
-        return round(sum(scores) / len(scores), 1)
+        return round(
+            sum(scores) / len(scores),
+            1,
+        )
 
-    async def get_received_ratings_count(
+    async def get_rating_count(
         self,
-        telegram_id: int,
+        profile_user_id: int,
     ):
         result = await self.request(
             "GET",
             "ratings",
             params={
-                "profile_user_id": f"eq.{telegram_id}",
+                "profile_user_id": f"eq.{profile_user_id}",
                 "select": "id",
             },
         )
 
         return len(result or [])
 
-    # =========================
-    # FIND PROFILE
-    # =========================
-
-    async def next_unrated_profile(
-        self,
-        telegram_id: int,
-    ):
-        result = await self.request(
-            "GET",
-            "public_profiles",
-            params={
-                "select": "*",
-                "user_id": f"neq.{telegram_id}",
-                "order": "random",
-                "limit": "50",
-            },
-        )
-
-        for profile in result or []:
-            rating = await self.get_rating(
-                telegram_id,
-                profile["user_id"],
-            )
-
-            if not rating:
-                return profile
-
-        return None
-
-    async def next_rated_profile(
-        self,
-        telegram_id: int,
-    ):
-        ratings = await self.request(
-            "GET",
-            "ratings",
-            params={
-                "rater_id": f"eq.{telegram_id}",
-                "select": "profile_user_id,score",
-                "order": "updated_at.desc",
-            },
-        )
-
-        if not ratings:
-            return None
-
-        for rating in ratings:
-            profile = await self.request(
-                "GET",
-                "public_profiles",
-                params={
-                    "user_id": f"eq.{rating['profile_user_id']}",
-                    "select": "*",
-                    "limit": "1",
-                },
-            )
-
-            if profile:
-                return profile[0]
-
-        return None
-
-    # =========================
+    # =========================================================
     # ADVICE
-    # =========================
+    # =========================================================
 
     async def create_advice(
         self,
@@ -347,16 +372,15 @@ class Database:
             },
         )
 
-    # =========================
+    # =========================================================
     # REPORTS
-    # =========================
+    # =========================================================
 
     async def create_report(
         self,
         reporter_id: int,
         profile_user_id: int,
         reason: str,
-        comment: str | None = None,
     ):
         return await self.request(
             "POST",
@@ -366,7 +390,6 @@ class Database:
                 "reporter_id": reporter_id,
                 "profile_user_id": profile_user_id,
                 "reason": reason,
-                "comment": comment,
             },
         )
 
@@ -376,32 +399,23 @@ class Database:
             "reports",
             params={
                 "select": "*",
-                "order": "created_at.desc",
+                "order": "id.desc",
                 "limit": "100",
             },
         )
 
-    async def close_report(
-        self,
-        report_id: int,
-        admin_id: int,
-    ):
+    # =========================================================
+    # BROADCAST
+    # =========================================================
+
+    async def get_all_users(self):
         return await self.request(
-            "PATCH",
-            "reports",
+            "GET",
+            "users",
             params={
-                "id": f"eq.{report_id}",
-            },
-            json={
-                "status": "closed",
-                "admin_id": admin_id,
-                "resolved_at": "now()",
+                "select": "telegram_id",
             },
         )
-
-    # =========================
-    # BROADCASTS
-    # =========================
 
     async def create_broadcast(
         self,
@@ -428,20 +442,7 @@ class Database:
             "broadcasts",
             params={
                 "select": "*",
-                "order": "created_at.desc",
+                "order": "id.desc",
                 "limit": "100",
-            },
-        )
-
-    # =========================
-    # ALL USERS
-    # =========================
-
-    async def get_all_users(self):
-        return await self.request(
-            "GET",
-            "users",
-            params={
-                "select": "telegram_id",
             },
         )
