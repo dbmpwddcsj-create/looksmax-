@@ -141,9 +141,19 @@ class Database:
 
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS
+                idx_ratings_rater
+                ON ratings(rater_id, rated_id)
+            """)
+
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS
                 idx_users_active
                 ON users(is_active, profile_created)
             """)
+
+    # ========================================================
+    # USERS
+    # ========================================================
 
     async def upsert_user(
         self,
@@ -270,7 +280,11 @@ class Database:
                 value
             )
 
-    async def random_profile(
+    # ========================================================
+    # ПОДБОР АНКЕТ
+    # ========================================================
+
+    async def random_unrated_profile(
         self,
         current_id
     ):
@@ -302,6 +316,58 @@ class Database:
                 LIMIT 1
             """, current_id)
 
+    async def random_rated_profile(
+        self,
+        current_id
+    ):
+
+        async with self.pool.acquire() as conn:
+
+            return await conn.fetchrow("""
+                SELECT u.*
+
+                FROM users u
+
+                WHERE u.profile_created = TRUE
+                  AND u.is_active = TRUE
+                  AND u.telegram_id <> $1
+
+                  AND EXISTS (
+
+                      SELECT 1
+
+                      FROM ratings r
+
+                      WHERE r.rater_id = $1
+                        AND r.rated_id = u.telegram_id
+
+                  )
+
+                ORDER BY RANDOM()
+
+                LIMIT 1
+            """, current_id)
+
+    async def random_profile(
+        self,
+        current_id
+    ):
+
+        profile = await self.random_unrated_profile(
+            current_id
+        )
+
+        if profile:
+            return profile
+
+        return await self.random_rated_profile(
+            current_id
+        )
+
+    # ========================================================
+    # РЕЙТИНГИ
+    # ========================================================
+
     async def rating_exists(
         self,
         rater_id,
@@ -321,6 +387,26 @@ class Database:
                       AND rated_id = $2
 
                 )
+            """,
+                rater_id,
+                rated_id
+            )
+
+    async def get_rating(
+        self,
+        rater_id,
+        rated_id
+    ):
+
+        async with self.pool.acquire() as conn:
+
+            return await conn.fetchrow("""
+                SELECT *
+
+                FROM ratings
+
+                WHERE rater_id = $1
+                  AND rated_id = $2
             """,
                 rater_id,
                 rated_id
@@ -348,6 +434,31 @@ class Database:
             """,
                 rater_id,
                 rated_id,
+                score
+            )
+
+    async def update_rating(
+        self,
+        rating_id,
+        score
+    ):
+
+        async with self.pool.acquire() as conn:
+
+            return await conn.fetchrow("""
+                UPDATE ratings
+
+                SET
+                    score = $2,
+                    table_type = NULL,
+                    advice = NULL,
+                    created_at = NOW()
+
+                WHERE id = $1
+
+                RETURNING id
+            """,
+                rating_id,
                 score
             )
 
@@ -407,6 +518,10 @@ class Database:
             """,
                 telegram_id
             )
+
+    # ========================================================
+    # РАССЫЛКА
+    # ========================================================
 
     async def get_active_users(self):
 
