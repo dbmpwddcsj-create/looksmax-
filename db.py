@@ -90,6 +90,26 @@ class Database:
             json=data,
         )
 
+    async def update_user_age(
+        self,
+        telegram_id: int,
+        age: int,
+    ):
+        return await self.update_user(
+            telegram_id,
+            {"age": age},
+        )
+
+    async def update_user_gender(
+        self,
+        telegram_id: int,
+        gender: str,
+    ):
+        return await self.update_user(
+            telegram_id,
+            {"gender": gender},
+        )
+
     async def get_all_users(self):
         return await self.request(
             "GET",
@@ -123,19 +143,22 @@ class Database:
         facts: str | None = None,
         height: float | None = None,
         weight: float | None = None,
-        look_type: str | None = None,
+        photo_ids: list[str] | None = None,
     ):
+        if not photo_ids:
+            photo_ids = [photo_id]
+
         result = await self.request(
             "POST",
             "profiles",
             params={"select": "*"},
             json={
                 "user_id": telegram_id,
-                "photo_id": photo_id,
+                "photo_id": photo_ids[0],
+                "photo_ids": photo_ids,
                 "facts": facts,
                 "height": height,
                 "weight": weight,
-                "look_type": look_type,
                 "status": "active",
             },
         )
@@ -156,6 +179,45 @@ class Database:
             json=data,
         )
 
+    async def update_profile_photos(
+        self,
+        telegram_id: int,
+        photo_ids: list[str],
+    ):
+        if not photo_ids:
+            return None
+
+        return await self.update_profile(
+            telegram_id,
+            {
+                "photo_id": photo_ids[0],
+                "photo_ids": photo_ids,
+            },
+        )
+
+    async def get_profile_photos(
+        self,
+        telegram_id: int,
+    ):
+        profile = await self.get_profile(
+            telegram_id
+        )
+
+        if not profile:
+            return []
+
+        photo_ids = profile.get("photo_ids")
+
+        if photo_ids:
+            return photo_ids
+
+        photo_id = profile.get("photo_id")
+
+        if photo_id:
+            return [photo_id]
+
+        return []
+
     async def delete_profile(
         self,
         telegram_id: int,
@@ -168,6 +230,7 @@ class Database:
             },
             json={
                 "status": "deleted",
+                "deleted_at": "now()",
             },
         )
 
@@ -183,6 +246,7 @@ class Database:
             },
             json={
                 "status": "active",
+                "deleted_at": None,
             },
         )
 
@@ -193,7 +257,6 @@ class Database:
     async def get_random_unrated_profile(
         self,
         rater_id: int,
-        exclude_user_ids: list[int] | None = None,
     ):
         profiles = await self.request(
             "GET",
@@ -209,13 +272,8 @@ class Database:
         if not profiles:
             return None
 
-        excluded = set(exclude_user_ids or [])
-
         for profile in profiles:
             profile_user_id = profile["user_id"]
-
-            if profile_user_id in excluded:
-                continue
 
             existing = await self.get_rating(
                 rater_id,
@@ -230,7 +288,6 @@ class Database:
     async def get_random_rated_profile(
         self,
         rater_id: int,
-        exclude_user_ids: list[int] | None = None,
     ):
         ratings = await self.request(
             "GET",
@@ -238,7 +295,7 @@ class Database:
             params={
                 "rater_id": f"eq.{rater_id}",
                 "select": "profile_user_id,score,look_type",
-                "order": "id.desc",
+                "order": "created_at.desc",
                 "limit": "100",
             },
         )
@@ -246,16 +303,9 @@ class Database:
         if not ratings:
             return None
 
-        excluded = set(exclude_user_ids or [])
-
         for rating in ratings:
-            profile_user_id = rating["profile_user_id"]
-
-            if profile_user_id in excluded:
-                continue
-
             profile = await self.get_profile(
-                profile_user_id
+                rating["profile_user_id"]
             )
 
             if profile and profile.get("status") == "active":
@@ -300,6 +350,7 @@ class Database:
         if existing:
             data = {
                 "score": score,
+                "updated_at": "now()",
             }
 
             if look_type is not None:
