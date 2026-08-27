@@ -1,7 +1,6 @@
 import os
 import httpx
 
-
 class Database:
     def __init__(self):
         self.url = os.environ["SUPABASE_URL"].rstrip("/")
@@ -272,8 +271,6 @@ class Database:
         if not profiles:
             return None
 
-        random.shuffle(profiles)
-
         for profile in profiles:
             profile_user_id = profile["user_id"]
 
@@ -304,8 +301,6 @@ class Database:
 
         if not ratings:
             return None
-
-        random.shuffle(ratings)
 
         for rating in ratings:
             profile = await self.get_profile(
@@ -428,53 +423,6 @@ class Database:
         )
 
         return len(result or [])
-
-    # =========================================================
-    # LIKES
-    # =========================================================
-
-    async def get_like(
-        self,
-        from_user_id: int,
-        to_user_id: int,
-    ):
-        result = await self.request(
-            "GET",
-            "likes",
-            params={
-                "from_user_id": f"eq.{from_user_id}",
-                "to_user_id": f"eq.{to_user_id}",
-                "select": "*",
-                "limit": "1",
-            },
-        )
-
-        return result[0] if result else None
-
-    async def create_like(
-        self,
-        from_user_id: int,
-        to_user_id: int,
-    ):
-        existing = await self.get_like(
-            from_user_id,
-            to_user_id,
-        )
-
-        if existing:
-            return existing
-
-        result = await self.request(
-            "POST",
-            "likes",
-            params={"select": "*"},
-            json={
-                "from_user_id": from_user_id,
-                "to_user_id": to_user_id,
-            },
-        )
-
-        return result[0] if result else None
 
     # =========================================================
     # ADVICE
