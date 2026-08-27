@@ -1,5 +1,3 @@
-Сможешь добавить в мой бот кое что?
-
 import asyncio
 import logging
 import os
