@@ -13,7 +13,13 @@ class Database:
             "Content-Type": "application/json",
         }
 
-    async def request(self, method: str, table: str, params=None, json=None):
+    async def request(
+        self,
+        method: str,
+        table: str,
+        params=None,
+        json=None,
+    ):
         url = f"{self.url}/rest/v1/{table}"
 
         async with httpx.AsyncClient(timeout=30) as client:
@@ -27,7 +33,8 @@ class Database:
 
         if response.status_code >= 400:
             raise RuntimeError(
-                f"Supabase error {response.status_code}: {response.text}"
+                f"Supabase error {response.status_code}: "
+                f"{response.text}"
             )
 
         if not response.text:
@@ -41,40 +48,75 @@ class Database:
 
     async def get_user(self, telegram_id: int):
         result = await self.request(
-            "GET", "users",
+            "GET",
+            "users",
             params={
                 "telegram_id": f"eq.{telegram_id}",
                 "select": "*",
                 "limit": "1",
             },
         )
+
         return result[0] if result else None
 
-    async def create_user(self, telegram_id: int, username: str | None):
+    async def create_user(
+        self,
+        telegram_id: int,
+        username: str | None,
+    ):
         result = await self.request(
-            "POST", "users",
+            "POST",
+            "users",
             params={"select": "*"},
-            json={"telegram_id": telegram_id, "username": username},
+            json={
+                "telegram_id": telegram_id,
+                "username": username,
+            },
         )
+
         return result[0] if result else None
 
-    async def update_user(self, telegram_id: int, data: dict):
+    async def update_user(
+        self,
+        telegram_id: int,
+        data: dict,
+    ):
         return await self.request(
-            "PATCH", "users",
-            params={"telegram_id": f"eq.{telegram_id}"},
+            "PATCH",
+            "users",
+            params={
+                "telegram_id": f"eq.{telegram_id}",
+            },
             json=data,
         )
 
-    async def update_user_age(self, telegram_id: int, age: int):
-        return await self.update_user(telegram_id, {"age": age})
+    async def update_user_age(
+        self,
+        telegram_id: int,
+        age: int,
+    ):
+        return await self.update_user(
+            telegram_id,
+            {"age": age},
+        )
 
-    async def update_user_gender(self, telegram_id: int, gender: str):
-        return await self.update_user(telegram_id, {"gender": gender})
+    async def update_user_gender(
+        self,
+        telegram_id: int,
+        gender: str,
+    ):
+        return await self.update_user(
+            telegram_id,
+            {"gender": gender},
+        )
 
     async def get_all_users(self):
         return await self.request(
-            "GET", "users",
-            params={"select": "telegram_id"},
+            "GET",
+            "users",
+            params={
+                "select": "telegram_id",
+            },
         )
 
     # =========================================================
@@ -83,13 +125,15 @@ class Database:
 
     async def get_profile(self, telegram_id: int):
         result = await self.request(
-            "GET", "profiles",
+            "GET",
+            "profiles",
             params={
                 "user_id": f"eq.{telegram_id}",
                 "select": "*",
                 "limit": "1",
             },
         )
+
         return result[0] if result else None
 
     async def create_profile(
@@ -105,7 +149,8 @@ class Database:
             photo_ids = [photo_id]
 
         result = await self.request(
-            "POST", "profiles",
+            "POST",
+            "profiles",
             params={"select": "*"},
             json={
                 "user_id": telegram_id,
@@ -117,54 +162,98 @@ class Database:
                 "status": "active",
             },
         )
+
         return result[0] if result else None
 
-    async def update_profile(self, telegram_id: int, data: dict):
+    async def update_profile(
+        self,
+        telegram_id: int,
+        data: dict,
+    ):
         return await self.request(
-            "PATCH", "profiles",
-            params={"user_id": f"eq.{telegram_id}"},
+            "PATCH",
+            "profiles",
+            params={
+                "user_id": f"eq.{telegram_id}",
+            },
             json=data,
         )
 
-    async def update_profile_photos(self, telegram_id: int, photo_ids: list[str]):
+    async def update_profile_photos(
+        self,
+        telegram_id: int,
+        photo_ids: list[str],
+    ):
         if not photo_ids:
             return None
+
         return await self.update_profile(
             telegram_id,
-            {"photo_id": photo_ids[0], "photo_ids": photo_ids},
+            {
+                "photo_id": photo_ids[0],
+                "photo_ids": photo_ids,
+            },
         )
 
-    async def get_profile_photos(self, telegram_id: int):
-        profile = await self.get_profile(telegram_id)
+    async def get_profile_photos(
+        self,
+        telegram_id: int,
+    ):
+        profile = await self.get_profile(
+            telegram_id
+        )
+
         if not profile:
             return []
 
         photo_ids = profile.get("photo_ids")
+
         if photo_ids:
             return photo_ids
 
         photo_id = profile.get("photo_id")
-        return [photo_id] if photo_id else []
 
-    async def delete_profile(self, telegram_id: int):
+        if photo_id:
+            return [photo_id]
+
+        return []
+
+    async def delete_profile(
+        self,
+        telegram_id: int,
+    ):
         return await self.update_profile(
             telegram_id,
-            {"status": "deleted", "deleted_at": "now()"},
+            {
+                "status": "deleted",
+                "deleted_at": None,
+            },
         )
 
-    async def restore_profile(self, telegram_id: int):
+    async def restore_profile(
+        self,
+        telegram_id: int,
+    ):
         return await self.update_profile(
             telegram_id,
-            {"status": "active", "deleted_at": None},
+            {
+                "status": "active",
+                "deleted_at": None,
+            },
         )
 
     # =========================================================
     # RATING PROFILES
     # =========================================================
 
-    async def get_random_unrated_profile(self, rater_id: int):
+    async def get_random_unrated_profile(
+        self,
+        rater_id: int,
+        exclude_ids: list[int] | None = None,
+    ):
         profiles = await self.request(
-            "GET", "profiles",
+            "GET",
+            "profiles",
             params={
                 "user_id": f"neq.{rater_id}",
                 "status": "eq.active",
@@ -176,17 +265,32 @@ class Database:
         if not profiles:
             return None
 
+        exclude_ids = set(exclude_ids or [])
+
         for profile in profiles:
             profile_user_id = profile["user_id"]
-            existing = await self.get_rating(rater_id, profile_user_id)
+
+            if profile_user_id in exclude_ids:
+                continue
+
+            existing = await self.get_rating(
+                rater_id,
+                profile_user_id,
+            )
+
             if existing is None:
                 return profile
 
         return None
 
-    async def get_random_rated_profile(self, rater_id: int):
+    async def get_random_rated_profile(
+        self,
+        rater_id: int,
+        exclude_ids: list[int] | None = None,
+    ):
         ratings = await self.request(
-            "GET", "ratings",
+            "GET",
+            "ratings",
             params={
                 "rater_id": f"eq.{rater_id}",
                 "select": "profile_user_id,score,look_type",
@@ -198,8 +302,18 @@ class Database:
         if not ratings:
             return None
 
+        exclude_ids = set(exclude_ids or [])
+
         for rating in ratings:
-            profile = await self.get_profile(rating["profile_user_id"])
+            profile_user_id = rating["profile_user_id"]
+
+            if profile_user_id in exclude_ids:
+                continue
+
+            profile = await self.get_profile(
+                profile_user_id
+            )
+
             if profile and profile.get("status") == "active":
                 return profile
 
@@ -209,9 +323,14 @@ class Database:
     # RATINGS
     # =========================================================
 
-    async def get_rating(self, rater_id: int, profile_user_id: int):
+    async def get_rating(
+        self,
+        rater_id: int,
+        profile_user_id: int,
+    ):
         result = await self.request(
-            "GET", "ratings",
+            "GET",
+            "ratings",
             params={
                 "rater_id": f"eq.{rater_id}",
                 "profile_user_id": f"eq.{profile_user_id}",
@@ -219,6 +338,7 @@ class Database:
                 "limit": "1",
             },
         )
+
         return result[0] if result else None
 
     async def save_rating(
@@ -228,24 +348,29 @@ class Database:
         score: float,
         look_type: str | None = None,
     ):
-        existing = await self.get_rating(rater_id, profile_user_id)
+        existing = await self.get_rating(
+            rater_id,
+            profile_user_id,
+        )
 
         if existing:
-            data = {"score": score, "updated_at": "now()"}
-            if look_type is not None:
-                data["look_type"] = look_type
-
             return await self.request(
-                "PATCH", "ratings",
+                "PATCH",
+                "ratings",
                 params={
                     "rater_id": f"eq.{rater_id}",
                     "profile_user_id": f"eq.{profile_user_id}",
                 },
-                json=data,
+                json={
+                    "score": score,
+                    "look_type": look_type,
+                    "updated_at": "now()",
+                },
             )
 
         return await self.request(
-            "POST", "ratings",
+            "POST",
+            "ratings",
             params={"select": "*"},
             json={
                 "rater_id": rater_id,
@@ -255,9 +380,13 @@ class Database:
             },
         )
 
-    async def get_average_rating(self, profile_user_id: int):
+    async def get_average_rating(
+        self,
+        profile_user_id: int,
+    ):
         result = await self.request(
-            "GET", "ratings",
+            "GET",
+            "ratings",
             params={
                 "profile_user_id": f"eq.{profile_user_id}",
                 "select": "score",
@@ -268,63 +397,115 @@ class Database:
             return 0.0
 
         scores = []
+
         for row in result:
             try:
                 scores.append(float(row["score"]))
             except (TypeError, ValueError):
                 pass
 
-        return round(sum(scores) / len(scores), 1) if scores else 0.0
+        if not scores:
+            return 0.0
 
-    async def get_rating_count(self, profile_user_id: int):
+        return round(
+            sum(scores) / len(scores),
+            1,
+        )
+
+    async def get_rating_count(
+        self,
+        profile_user_id: int,
+    ):
         result = await self.request(
-            "GET", "ratings",
+            "GET",
+            "ratings",
             params={
                 "profile_user_id": f"eq.{profile_user_id}",
                 "select": "id",
             },
         )
+
         return len(result or [])
 
     # =========================================================
-    # LIKES
+    # LIKES / DATING
     # =========================================================
 
-    async def get_like(self, user_id: int, liked_user_id: int):
+    async def get_like(
+        self,
+        from_user_id: int,
+        to_user_id: int,
+    ):
         result = await self.request(
-            "GET", "likes",
+            "GET",
+            "likes",
             params={
-                "user_id": f"eq.{user_id}",
-                "liked_user_id": f"eq.{liked_user_id}",
+                "from_user_id": f"eq.{from_user_id}",
+                "to_user_id": f"eq.{to_user_id}",
                 "select": "*",
                 "limit": "1",
             },
         )
+
         return result[0] if result else None
 
-    async def has_like(self, user_id: int, liked_user_id: int):
-        return (await self.get_like(user_id, liked_user_id)) is not None
+    async def create_like(
+        self,
+        from_user_id: int,
+        to_user_id: int,
+    ):
+        if from_user_id == to_user_id:
+            return None
 
-    async def create_like(self, user_id: int, liked_user_id: int):
-        existing = await self.get_like(user_id, liked_user_id)
+        existing = await self.get_like(
+            from_user_id,
+            to_user_id,
+        )
+
         if existing:
             return existing
 
         result = await self.request(
-            "POST", "likes",
+            "POST",
+            "likes",
             params={"select": "*"},
             json={
-                "user_id": user_id,
-                "liked_user_id": liked_user_id,
+                "from_user_id": from_user_id,
+                "to_user_id": to_user_id,
             },
         )
+
         return result[0] if result else None
 
-    async def get_likes_received(self, user_id: int):
+    async def has_mutual_like(
+        self,
+        user_a: int,
+        user_b: int,
+    ):
+        first = await self.get_like(
+            user_a,
+            user_b,
+        )
+
+        if not first:
+            return False
+
+        second = await self.get_like(
+            user_b,
+            user_a,
+        )
+
+        return second is not None
+
+    async def get_likes_received(
+        self,
+        user_id: int,
+    ):
         return await self.request(
-            "GET", "likes",
+            "GET",
+            "likes",
             params={
-                "liked_user_id": f"eq.{user_id}",
+                "to_user_id": f"eq.{user_id}",
                 "select": "*",
                 "order": "created_at.desc",
                 "limit": "100",
@@ -343,7 +524,8 @@ class Database:
         score: float | None = None,
     ):
         return await self.request(
-            "POST", "advice",
+            "POST",
+            "advice",
             params={"select": "*"},
             json={
                 "from_user_id": from_user_id,
@@ -357,9 +539,15 @@ class Database:
     # REPORTS
     # =========================================================
 
-    async def create_report(self, reporter_id: int, profile_user_id: int, reason: str):
+    async def create_report(
+        self,
+        reporter_id: int,
+        profile_user_id: int,
+        reason: str,
+    ):
         return await self.request(
-            "POST", "reports",
+            "POST",
+            "reports",
             params={"select": "*"},
             json={
                 "reporter_id": reporter_id,
@@ -370,15 +558,26 @@ class Database:
 
     async def get_reports(self):
         return await self.request(
-            "GET", "reports",
-            params={"select": "*", "order": "id.desc", "limit": "100"},
+            "GET",
+            "reports",
+            params={
+                "select": "*",
+                "order": "id.desc",
+                "limit": "100",
+            },
         )
 
     async def get_report(self, report_id: int):
         result = await self.request(
-            "GET", "reports",
-            params={"id": f"eq.{report_id}", "select": "*", "limit": "1"},
+            "GET",
+            "reports",
+            params={
+                "id": f"eq.{report_id}",
+                "select": "*",
+                "limit": "1",
+            },
         )
+
         return result[0] if result else None
 
     # =========================================================
@@ -393,7 +592,8 @@ class Database:
         failed_count: int,
     ):
         return await self.request(
-            "POST", "broadcasts",
+            "POST",
+            "broadcasts",
             params={"select": "*"},
             json={
                 "admin_id": admin_id,
@@ -405,6 +605,11 @@ class Database:
 
     async def get_broadcasts(self):
         return await self.request(
-            "GET", "broadcasts",
-            params={"select": "*", "order": "id.desc", "limit": "100"},
+            "GET",
+            "broadcasts",
+            params={
+                "select": "*",
+                "order": "id.desc",
+                "limit": "100",
+            },
         )
